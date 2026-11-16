@@ -51,20 +51,18 @@ std::vector<Token> Lexer::tokenize() {
         int tokenColumn = currentColumn;
         std::size_t tokenOffset = cursor;
 
-        if (current == '.' &&
-            cursor + 1 < source.length() &&
-            source[cursor + 1] == '.') {
+if (current == ';') {
+    advance();
 
-            advance();
-            advance();
+    tokens.push_back({
+        TokenType::SEMICOLON, ";",
+        tokenLine, tokenColumn, tokenOffset
+    });
 
-            tokens.push_back({
-                TokenType::DOTDOT, "..",
-                tokenLine, tokenColumn, tokenOffset
-            });
+    continue;
+}
 
-            continue;
-        }
+            
 
         if (current == '"') {
             advance();
@@ -148,6 +146,166 @@ std::vector<Token> Lexer::tokenize() {
                     TokenType::WHILE, ident,
                     tokenLine, tokenColumn, tokenOffset
                 });
+
+                 } else if (ident == "do") {
+                tokens.push_back({
+                    TokenType::DO, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });
+
+            } else if (ident == "let") {
+                tokens.push_back({
+                    TokenType::LET, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "return") {
+                tokens.push_back({
+                    TokenType::RETURN, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "u1") {
+                tokens.push_back({
+                    TokenType::U1, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "u8") {
+                tokens.push_back({
+                    TokenType::U8, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "u16") {
+                tokens.push_back({
+                    TokenType::U16, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "u32") {
+                tokens.push_back({
+                    TokenType::U32, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "u64") {
+                tokens.push_back({
+                    TokenType::U64, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "i1") {
+                tokens.push_back({
+                    TokenType::I1, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "i8") {
+                tokens.push_back({
+                    TokenType::I8, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "i16") {
+                tokens.push_back({
+                    TokenType::I16, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "i32") {
+                tokens.push_back({
+                    TokenType::I32, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "i64") {
+                tokens.push_back({
+                    TokenType::I64, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "f32") {
+                tokens.push_back({
+                    TokenType::F32, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "f64") {
+                tokens.push_back({
+                    TokenType::F64, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "bool") {
+                tokens.push_back({
+                    TokenType::BOOL, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "char") {
+                tokens.push_back({
+                    TokenType::CHAR, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "string") {
+                tokens.push_back({
+                    TokenType::STRING, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+
+  } else if (ident == "requires") {
+                tokens.push_back({
+                    TokenType::REQUIRES, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+} else if (ident == "ensures") {
+                tokens.push_back({
+                    TokenType::ENSURES, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+} else if (ident == "invariant") {
+                tokens.push_back({
+                    TokenType::INVARIANT, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+} else if (ident == "assert") {
+                tokens.push_back({
+                    TokenType::ASSERT, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
+} else if (ident == "assume") {
+                tokens.push_back({
+                    TokenType::ASSUME, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });    
+
+} else if (ident == "for") {
+                tokens.push_back({
+                    TokenType::FOR, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });    
+
+
+} else if (ident == "break") {
+                tokens.push_back({
+                    TokenType::BREAK, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });  
+
+
+} else if (ident == "continue") {
+                tokens.push_back({
+                    TokenType::CONTINUE, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });  
+
+} else if (ident == "result") {
+                tokens.push_back({
+                    TokenType::RESULT, ident,
+                    tokenLine, tokenColumn, tokenOffset
+                });     
 
             } else if (ident == "else") {
                 std::size_t savedCursor = cursor;
@@ -272,19 +430,35 @@ std::vector<Token> Lexer::tokenize() {
                 break;
 
             case '>':
-                tokens.push_back({
-                    TokenType::GREATER, ">",
-                    tokenLine, tokenColumn, tokenOffset
-                });
+                if (peek() == '>') {
+                    advance();
+                    tokens.push_back({
+                        TokenType::SHIFT_RIGHT, ">>",
+                        tokenLine, tokenColumn, tokenOffset
+                    });
+                } else {
+                    tokens.push_back({
+                        TokenType::GREATER, ">",
+                        tokenLine, tokenColumn, tokenOffset
+                    });
+                }
                 break;
 
             case '<':
-                tokens.push_back({
-                    TokenType::LESS, "<",
-                    tokenLine, tokenColumn, tokenOffset
-                });
+                if (peek() == '<') {
+                    advance();
+                    tokens.push_back({
+                        TokenType::SHIFT_LEFT, "<<",
+                        tokenLine, tokenColumn, tokenOffset
+                    });
+                } else {
+                    tokens.push_back({
+                        TokenType::LESS, "<",
+                        tokenLine, tokenColumn, tokenOffset
+                    });
+                }
                 break;
-
+            
             case '(':
                 tokens.push_back({
                     TokenType::LPAREN, "(",
@@ -298,20 +472,49 @@ std::vector<Token> Lexer::tokenize() {
                     tokenLine, tokenColumn, tokenOffset
                 });
                 break;
-
-            case '{':
+            case ',':
                 tokens.push_back({
-                    TokenType::LBRACE, "{",
+                    TokenType::COMMA, ",",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                break;
+            case ':':
+                tokens.push_back({
+                    TokenType::COLON, ":",
                     tokenLine, tokenColumn, tokenOffset
                 });
                 break;
 
-            case '}':
-                tokens.push_back({
-                    TokenType::RBRACE, "}",
-                    tokenLine, tokenColumn, tokenOffset
-                });
-                break;
+
+           case '{':
+    if (peek() == '{') {
+        advance();
+        tokens.push_back({
+            TokenType::VERIFY_START, "{{",
+            tokenLine, tokenColumn, tokenOffset
+        });
+    } else {
+        tokens.push_back({
+            TokenType::LBRACE, "{",
+            tokenLine, tokenColumn, tokenOffset
+        });
+    }
+    break;
+
+          case '}':
+    if (peek() == '}') {
+        advance();
+        tokens.push_back({
+            TokenType::VERIFY_END, "}}",
+            tokenLine, tokenColumn, tokenOffset
+        });
+    } else {
+        tokens.push_back({
+            TokenType::RBRACE, "}",
+            tokenLine, tokenColumn, tokenOffset
+        });
+    }
+    break;
 
             case '+':
                 tokens.push_back({
@@ -319,12 +522,19 @@ std::vector<Token> Lexer::tokenize() {
                     tokenLine, tokenColumn, tokenOffset
                 });
                 break;
-
             case '-':
-                tokens.push_back({
-                    TokenType::MINUS, "-",
-                    tokenLine, tokenColumn, tokenOffset
-                });
+                if (peek() == '>') {
+                    advance();
+                    tokens.push_back({
+                        TokenType::ARROW, "->",
+                        tokenLine, tokenColumn, tokenOffset
+                    });
+                } else {
+                    tokens.push_back({
+                        TokenType::MINUS, "-",
+                        tokenLine, tokenColumn, tokenOffset
+                    });
+                }
                 break;
 
             case '*':
@@ -337,6 +547,26 @@ std::vector<Token> Lexer::tokenize() {
             case '/':
                 tokens.push_back({
                     TokenType::DIVIDE, "/",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                break;
+            case '&':
+                tokens.push_back({
+                    TokenType::AMPERSAND, "&",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                break;
+
+            case '|':
+                tokens.push_back({
+                    TokenType::PIPE, "|",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                break;
+
+            case '^':
+                tokens.push_back({
+                    TokenType::CARET, "^",
                     tokenLine, tokenColumn, tokenOffset
                 });
                 break;
@@ -361,3 +591,5 @@ std::vector<Token> Lexer::tokenize() {
 
     return tokens;
 }
+
+

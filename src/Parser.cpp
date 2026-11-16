@@ -20,6 +20,7 @@ Token Parser::peek() const {
                 tokens.back().offset + tokens.back().value.size()
         };
     }
+    
 
     return tokens[cursor];
 }
@@ -154,10 +155,38 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
     }
 
     if (match(TokenType::IDENTIFIER)) {
-        return std::make_unique<VariableASTNode>(
-            tokens[cursor - 1].value
+    std::string name = tokens[cursor - 1].value;
+
+    if (match(TokenType::LPAREN)) {
+        std::vector<std::unique_ptr<ASTNode>> arguments;
+
+        if (peek().type != TokenType::RPAREN) {
+            while (true) {
+                auto argument = parseOr();
+
+                if (!argument) {
+                    return nullptr;
+                }
+
+                arguments.push_back(std::move(argument));
+
+                if (!match(TokenType::COMMA)) {
+                    break;
+                }
+            }
+        }
+
+        consumeClosingParenthesis();
+
+        return std::make_unique<FunctionCallASTNode>(
+            name,
+            std::move(arguments)
         );
     }
+
+    return std::make_unique<VariableASTNode>(name);
+}
+
 
     addError(peek().line, "Expected expression");
 
@@ -214,19 +243,147 @@ std::unique_ptr<ASTNode> Parser::parseExpression() {
     return node;
 }
 
-std::unique_ptr<ASTNode> Parser::parseComparison() {
+std::unique_ptr<ASTNode> Parser::parseShift() {
     auto node = parseExpression();
+
+    while (
+        peek().type == TokenType::SHIFT_LEFT ||
+        peek().type == TokenType::SHIFT_RIGHT
+    ) {
+        Token op = advance();
+        auto right = parseExpression();
+
+        if (!node || !right) {
+            node = nullptr;
+            continue;
+        }
+
+        node = std::make_unique<BinaryASTNode>(
+            op.value,
+            std::move(node),
+            std::move(right)
+        );
+    }
+
+    return node;
+}
+
+std::unique_ptr<ASTNode> Parser::parseRelational() {
+    auto node = parseShift();
 
     while (
         peek().type == TokenType::GREATER ||
         peek().type == TokenType::LESS ||
         peek().type == TokenType::GREATER_EQUAL ||
-        peek().type == TokenType::LESS_EQUAL ||
+        peek().type == TokenType::LESS_EQUAL
+    ) {
+        Token op = advance();
+        auto right = parseShift();
+
+        if (!node || !right) {
+            node = nullptr;
+            continue;
+        }
+
+        node = std::make_unique<BinaryASTNode>(
+            op.value,
+            std::move(node),
+            std::move(right)
+        );
+    }
+
+    return node;
+}
+
+std::unique_ptr<ASTNode> Parser::parseEquality() {
+    auto node = parseRelational();
+
+    while (
         peek().type == TokenType::EQUAL_EQUAL ||
         peek().type == TokenType::NOT_EQUAL
     ) {
         Token op = advance();
-        auto right = parseExpression();
+        auto right = parseRelational();
+
+        if (!node || !right) {
+            node = nullptr;
+            continue;
+        }
+
+        node = std::make_unique<BinaryASTNode>(
+            op.value,
+            std::move(node),
+            std::move(right)
+        );
+    }
+
+    return node;
+}
+
+std::unique_ptr<ASTNode> Parser::parseBitwiseAnd() {
+    auto node = parseEquality();
+
+    while (match(TokenType::AMPERSAND)) {
+        Token op = tokens[cursor - 1];
+        auto right = parseEquality();
+
+        if (!node || !right) {
+            node = nullptr;
+            continue;
+        }
+
+        node = std::make_unique<BinaryASTNode>(
+            op.value,
+            std::move(node),
+            std::move(right)
+        );
+    }
+
+    return node;
+}
+
+std::unique_ptr<ASTNode> Parser::parseContinue() {
+    consume(
+        TokenType::CONTINUE,
+        "Expected 'continue'"
+    );
+
+    consume(
+        TokenType::SEMICOLON,
+        "Expected ';' after continue"
+    );
+
+    return std::make_unique<ContinueASTNode>();
+}
+
+std::unique_ptr<ASTNode> Parser::parseBitwiseXor() {
+    auto node = parseBitwiseAnd();
+
+    while (match(TokenType::CARET)) {
+        Token op = tokens[cursor - 1];
+        auto right = parseBitwiseAnd();
+
+        if (!node || !right) {
+            node = nullptr;
+            continue;
+        }
+
+        node = std::make_unique<BinaryASTNode>(
+            op.value,
+            std::move(node),
+            std::move(right)
+        );
+    }
+
+    return node;
+}
+
+std::unique_ptr<ASTNode> Parser::parseBitwiseOr() {
+    auto node = parseBitwiseXor();
+
+    while (match(TokenType::PIPE)) {
+        Token op = tokens[cursor - 1];
+        auto right = parseBitwiseXor();
 
         if (!node || !right) {
             node = nullptr;
@@ -257,7 +414,7 @@ std::unique_ptr<ASTNode> Parser::parseNot() {
         );
     }
 
-    return parseComparison();
+    return parseBitwiseOr();
 }
 
 std::unique_ptr<ASTNode> Parser::parseAnd() {
@@ -343,10 +500,450 @@ std::unique_ptr<ASTNode> Parser::parseWhile() {
     return nullptr;
 }
 
+std::unique_ptr<ASTNode> Parser::parseFor() {
+    consume(
+        TokenType::FOR,
+        "Expected 'for'"
+    );
+
+    consumeOpeningParenthesis();
+
+    // Initialization
+    auto initialization = parseVariableDeclaration();
+
+    // Condition
+    auto condition = parseOr();
+
+    consume(
+        TokenType::SEMICOLON,
+        "Expected ';' after for condition"
+    );
+
+    // Update
+    Token nameToken = consume(
+        TokenType::IDENTIFIER,
+        "Expected variable name in for update"
+    );
+
+    consume(
+        TokenType::EQUAL,
+        "Expected '=' after variable name in for update"
+    );
+
+    auto updateValue = parseOr();
+
+    std::unique_ptr<ASTNode> update;
+
+    if (updateValue) {
+        update = std::make_unique<AssignmentASTNode>(
+            nameToken.value,
+            std::move(updateValue)
+        );
+    }
+
+    consumeClosingParenthesis();
+
+    // Body
+    consume(
+        TokenType::LBRACE,
+        "Expected '{' before for body"
+    );
+
+    std::vector<std::unique_ptr<ASTNode>> statements;
+
+    while (
+        peek().type != TokenType::RBRACE &&
+        peek().type != TokenType::END_OF_FILE
+    ) {
+        std::size_t previousCursor = cursor;
+
+        auto statement = parseStatement();
+
+        if (statement) {
+            statements.push_back(std::move(statement));
+        }
+
+        if (cursor == previousCursor) {
+            advance();
+        }
+    }
+
+    consume(
+        TokenType::RBRACE,
+        "Expected '}' after for body"
+    );
+
+    if (
+        initialization &&
+        condition &&
+        update
+    ) {
+        return std::make_unique<ForASTNode>(
+            std::move(initialization),
+            std::move(condition),
+            std::move(update),
+            std::move(statements)
+        );
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<ASTNode> Parser::parseBreak() {
+    consume(
+        TokenType::BREAK,
+        "Expected 'break'"
+    );
+
+    consume(
+        TokenType::SEMICOLON,
+        "Expected ';' after break"
+    );
+
+    return std::make_unique<BreakASTNode>();
+}
+
+std::unique_ptr<ASTNode> Parser::parseFunction() {
+    consume(TokenType::DO, "Expected 'do'");
+
+    Token nameToken = consume(
+        TokenType::IDENTIFIER,
+        "Expected function name"
+    );
+
+        consumeOpeningParenthesis();
+    
+
+    std::vector<std::unique_ptr<ParameterASTNode>> parameters;
+
+    if (peek().type != TokenType::RPAREN) {
+       
+        while (true) {
+    Token parameterName = consume(
+        TokenType::IDENTIFIER,
+        "Expected parameter name"
+    );
+
+    consume(
+        TokenType::COLON,
+        "Expected ':' after parameter name"
+    );
+
+    Token typeToken = advance();
+
+
+            parameters.push_back(
+                std::make_unique<ParameterASTNode>(
+                    parameterName.value,
+                    typeToken.value
+                )
+            );
+
+            if (!match(TokenType::COMMA)) {
+                break;
+            }
+        }
+    }
+
+        consumeClosingParenthesis();
+
+    consume(
+        TokenType::ARROW,
+        "Expected '->' before return type"
+    );
+
+    Token returnTypeToken = peek();
+
+if (
+    returnTypeToken.type != TokenType::U1 &&
+    returnTypeToken.type != TokenType::U8 &&
+    returnTypeToken.type != TokenType::U16 &&
+    returnTypeToken.type != TokenType::U32 &&
+    returnTypeToken.type != TokenType::U64 &&
+    returnTypeToken.type != TokenType::I1 &&
+    returnTypeToken.type != TokenType::I8 &&
+    returnTypeToken.type != TokenType::I16 &&
+    returnTypeToken.type != TokenType::I32 &&
+    returnTypeToken.type != TokenType::I64 &&
+    returnTypeToken.type != TokenType::F32 &&
+    returnTypeToken.type != TokenType::F64 &&
+    returnTypeToken.type != TokenType::BOOL &&
+    returnTypeToken.type != TokenType::CHAR &&
+    returnTypeToken.type != TokenType::STRING
+) {
+    addError(peek().line, "Expected a valid return type");
+    return nullptr;
+}
+
+advance();
+
+
+    consume(
+        TokenType::LBRACE,
+        "Expected '{' before function body"
+    );
+
+    std::vector<std::unique_ptr<ASTNode>> statements;
+
+    while (
+        peek().type != TokenType::RBRACE &&
+        peek().type != TokenType::END_OF_FILE
+    ) {
+        std::size_t previousCursor = cursor;
+
+        auto statement = parseStatement();
+
+        if (statement) {
+            statements.push_back(std::move(statement));
+        }
+
+        if (cursor == previousCursor) {
+            advance();
+        }
+    }
+
+    consume(
+        TokenType::RBRACE,
+        "Expected '}' after function body"
+    );
+
+    if (nameToken.type != TokenType::IDENTIFIER) {
+        return nullptr;
+    }
+
+    return std::make_unique<FunctionASTNode>(
+        nameToken.value,
+        returnTypeToken.value,
+        std::move(parameters),
+        std::move(statements)
+    );
+}
+
+std::unique_ptr<ASTNode> Parser::parseVariableDeclaration() {
+    consume(
+        TokenType::LET,
+        "Expected 'let'"
+    );
+
+    Token nameToken = consume(
+        TokenType::IDENTIFIER,
+        "Expected variable name"
+    );
+
+    consume(
+        TokenType::COLON,
+        "Expected ':' after variable name"
+    );
+
+    if (
+        peek().type != TokenType::U1 &&
+        peek().type != TokenType::U8 &&
+        peek().type != TokenType::U16 &&
+        peek().type != TokenType::U32 &&
+        peek().type != TokenType::U64 &&
+        peek().type != TokenType::I1 &&
+        peek().type != TokenType::I8 &&
+        peek().type != TokenType::I16 &&
+        peek().type != TokenType::I32 &&
+        peek().type != TokenType::I64 &&
+        peek().type != TokenType::F32 &&
+        peek().type != TokenType::F64 &&
+        peek().type != TokenType::BOOL &&
+        peek().type != TokenType::CHAR &&
+        peek().type != TokenType::STRING
+    ) {
+        addError(
+            peek().line,
+            "Expected a valid data type"
+        );
+
+        return nullptr;
+    }
+
+    Token typeToken = advance();
+
+    consume(
+        TokenType::EQUAL,
+        "Expected '=' after variable type"
+    );
+
+    auto value = parseOr();
+
+    consume(
+        TokenType::SEMICOLON,
+        "Expected ';' at the end of variable declaration"
+    );
+
+    if (
+        nameToken.type == TokenType::IDENTIFIER &&
+        value
+    ) {
+        return std::make_unique<VariableDeclarationASTNode>(
+            nameToken.value,
+            typeToken.value,
+            std::move(value)
+        );
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<ASTNode> Parser::parseReturn() {
+    consume(
+        TokenType::RETURN,
+        "Expected 'return'"
+    );
+
+    auto value = parseOr();
+
+    consume(
+        TokenType::SEMICOLON,
+        "Expected ';' at the end of return statement"
+    );
+
+    if (value) {
+        return std::make_unique<ReturnASTNode>(
+            std::move(value)
+        );
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<ASTNode> Parser::parseAssert() {
+    consume(
+        TokenType::ASSERT,
+        "Expected 'assert'"
+    );
+
+    consumeOpeningParenthesis();
+
+    auto condition = parseOr();
+
+    consumeClosingParenthesis();
+
+    consume(
+        TokenType::SEMICOLON,
+
+        "Expected ';' at the end of assert statement"
+    );
+
+    if (condition) {
+        return std::make_unique<AssertASTNode>(
+            std::move(condition)
+        );
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<ASTNode> Parser::parseAssume() {
+    consume(
+        TokenType::ASSUME,
+        "Expected 'assume'"
+    );
+
+    consumeOpeningParenthesis();
+
+    auto condition = parseOr();
+
+    consumeClosingParenthesis();
+
+    consume(
+        TokenType::SEMICOLON,
+        "Expected ';' at the end of assume statement"
+    );
+
+    if (condition) {
+        return std::make_unique<AssumeASTNode>(
+            std::move(condition)
+        );
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<ASTNode> Parser::parseContract() {
+    Token contractToken = advance();
+
+    if (
+        contractToken.type != TokenType::REQUIRES &&
+        contractToken.type != TokenType::ENSURES &&
+        contractToken.type != TokenType::INVARIANT
+    ) {
+        addError(
+            contractToken.line,
+            "Expected a contract keyword"
+        );
+
+        return nullptr;
+    }
+
+    consumeOpeningParenthesis();
+
+    auto condition = parseOr();
+
+    consumeClosingParenthesis();
+
+    consume(
+        TokenType::SEMICOLON,
+        "Expected ';' at the end of contract"
+    );
+
+    if (condition) {
+        return std::make_unique<ContractASTNode>(
+            contractToken.value,
+            std::move(condition)
+        );
+    }
+
+    return nullptr;
+}
+
 std::unique_ptr<ASTNode> Parser::parseStatement() {
     if (peek().type == TokenType::WHILE) {
         return parseWhile();
     }
+
+if (peek().type == TokenType::FOR) {
+    return parseFor();
+}
+
+if (peek().type == TokenType::BREAK) {
+    return parseBreak();
+}
+
+if (peek().type == TokenType::CONTINUE) {
+    return parseContinue();
+}
+
+if (peek().type == TokenType::DO) {
+    return parseFunction();
+}
+
+if (peek().type == TokenType::LET) {
+    return parseVariableDeclaration();
+}
+
+if (peek().type == TokenType::RETURN) {
+    return parseReturn();
+}
+
+if (peek().type == TokenType::ASSERT) {
+    return parseAssert();
+}
+
+if (peek().type == TokenType::ASSUME) {
+    return parseAssume();
+}
+
+if (
+    peek().type == TokenType::REQUIRES ||
+    peek().type == TokenType::ENSURES ||
+    peek().type == TokenType::INVARIANT
+) {
+    return parseContract();
+}
 
     if (
         match(TokenType::IF) ||
@@ -356,7 +953,7 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
 
         auto condition = parseOr();
 
-        consumeClosingParenthesis();
+              consumeClosingParenthesis();
 
         consume(
             TokenType::LBRACE,
@@ -447,7 +1044,7 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         } else {
             std::size_t openingOffset = peek().offset;
 
-            expr = parseComparison();
+            expr = parseOr();
 
             if (peek().type == TokenType::RPAREN) {
                 addDiagnostic(
@@ -460,8 +1057,8 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         }
 
         consume(
-            TokenType::DOTDOT,
-            "Expected '..' at the end of statement"
+        TokenType::SEMICOLON,
+            "Expected ';' at the end of statement"
         );
 
         if (expr) {
@@ -481,11 +1078,11 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
             "Expected '=' after variable name"
         );
 
-        auto value = parseComparison();
+        auto value = parseOr();
 
         consume(
-            TokenType::DOTDOT,
-            "Expected '..' at the end of statement"
+        TokenType::SEMICOLON,
+            "Expected ';' at the end of statement"
         );
 
         if (value) {

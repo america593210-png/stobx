@@ -1,3 +1,4 @@
+
 #ifndef CODEGEN_H
 #define CODEGEN_H
 
@@ -7,6 +8,7 @@
 #include <llvm/IR/IRBuilder.h>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 class CodeGen {
 public:
@@ -19,10 +21,23 @@ private:
     std::unique_ptr<llvm::Module> module;
     std::unique_ptr<llvm::IRBuilder<>> builder;
 
-    std::unordered_map<std::string, llvm::AllocaInst*> variables;
+    struct VariableInfo {
+    llvm::AllocaInst* allocation;
+    std::string typeName;
+};
+
+std::unordered_map<std::string, VariableInfo> variables;
+
+std::vector<llvm::BasicBlock*> breakTargets;
+
+std::vector<llvm::BasicBlock*> continueTargets;
+
 
     llvm::Value* generateExpression(ASTNode* node);
     llvm::Function* getPrintfFunction();
+llvm::Type* getTypeFromName(const std::string& typeName);
+
 };
 
 #endif
+
