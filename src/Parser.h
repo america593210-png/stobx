@@ -1,5 +1,4 @@
 
-
 #ifndef PARSER_H
 #define PARSER_H
 
@@ -109,6 +108,16 @@ public:
 class ProgramASTNode : public ASTNode {
 public:
     std::vector<std::unique_ptr<ASTNode>> statements;
+};
+
+class VerificationASTNode : public ASTNode {
+public:
+    std::vector<std::unique_ptr<ASTNode>> statements;
+
+    explicit VerificationASTNode(
+        std::vector<std::unique_ptr<ASTNode>> statements
+    )
+        : statements(std::move(statements)) {}
 };
 
 class IfASTNode : public ASTNode {
@@ -296,6 +305,7 @@ private:
     std::unique_ptr<ASTNode> parseOr();
     std::unique_ptr<ASTNode> parseAnd();
     std::unique_ptr<ASTNode> parseNot();
+    std::unique_ptr<ASTNode> parseUnary();
 
     std::unique_ptr<ASTNode> parseShift();
     std::unique_ptr<ASTNode> parseRelational();
@@ -319,6 +329,7 @@ private:
     std::unique_ptr<ASTNode> parseFor();
     std::unique_ptr<ASTNode> parseBreak();
     std::unique_ptr<ASTNode> parseContinue();
+    std::unique_ptr<ASTNode> parseVerificationBlock();
 
 };
 

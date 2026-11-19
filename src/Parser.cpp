@@ -1,9 +1,6 @@
 
 #include "Parser.h"
 #include "DiagnosticEngine.h"
-
-#include <string>
-#include <utility>
 #include <vector>
 
 Parser::Parser(std::vector<Token> tokens)
@@ -133,6 +130,24 @@ void Parser::synchronize() {
     }
 }
 
+std::unique_ptr<ASTNode> Parser::parseUnary() {
+    if (match(TokenType::MINUS)) {
+        auto node = parseUnary();
+
+        if (!node) {
+            return nullptr;
+        }
+
+        return std::make_unique<UnaryASTNode>(
+            "-",
+            std::move(node)
+        );
+    }
+
+    return parsePrimary();
+}
+
+
 std::unique_ptr<ASTNode> Parser::parsePrimary() {
     if (match(TokenType::LPAREN)) {
         auto node = parseOr();
@@ -194,14 +209,14 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
 }
 
 std::unique_ptr<ASTNode> Parser::parseTerm() {
-    auto node = parsePrimary();
+    auto node = parseUnary();
 
     while (
         peek().type == TokenType::MULTIPLY ||
         peek().type == TokenType::DIVIDE
     ) {
         Token op = advance();
-        auto right = parsePrimary();
+        auto right = parseUnary();
 
         if (!node || !right) {
             node = nullptr;
@@ -901,6 +916,11 @@ std::unique_ptr<ASTNode> Parser::parseContract() {
 }
 
 std::unique_ptr<ASTNode> Parser::parseStatement() {
+ 
+     if (peek().type == TokenType::VERIFY_START) {
+        return parseVerificationBlock();
+    }
+    
     if (peek().type == TokenType::WHILE) {
         return parseWhile();
     }
@@ -1114,6 +1134,49 @@ if (
     synchronize();
 
     return nullptr;
+}
+
+std::unique_ptr<ASTNode> Parser::parseVerificationBlock() {
+    consume(
+        TokenType::VERIFY_START,
+        "Expected '{{' at the beginning of verification block"
+    );
+
+    std::vector<std::unique_ptr<ASTNode>> statements;
+
+    while (
+        peek().type != TokenType::VERIFY_END &&
+        peek().type != TokenType::END_OF_FILE
+    ) {
+        std::size_t previousCursor = cursor;
+
+        auto statement = parseStatement();
+
+        if (statement) {
+            statements.push_back(std::move(statement));
+        }
+
+        if (cursor == previousCursor) {
+            advance();
+        }
+    }
+if (peek().type == TokenType::END_OF_FILE) {
+    addError(
+        peek().line,
+        "Expected '}}' at the end of verification block"
+    );
+
+    return nullptr;
+}
+
+consume(
+    TokenType::VERIFY_END,
+    "Expected '}}' at the end of verification block"
+);
+
+return std::make_unique<VerificationASTNode>(
+    std::move(statements)
+);
 }
 
 std::unique_ptr<ProgramASTNode> Parser::parse() {

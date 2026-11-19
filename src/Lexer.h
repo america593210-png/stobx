@@ -36,6 +36,7 @@ enum class TokenType {
     BREAK,
     CONTINUE,
     STRING,
+    STRING_LITERAL,
     REQUIRES,
     ENSURES,
     INVARIANT,

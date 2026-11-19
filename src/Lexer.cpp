@@ -62,8 +62,6 @@ if (current == ';') {
     continue;
 }
 
-            
-
         if (current == '"') {
             advance();
 
@@ -76,7 +74,7 @@ if (current == ';') {
                 advance();
 
             tokens.push_back({
-                TokenType::STRING, strVal,
+                TokenType::STRING_LITERAL, strVal,
                 tokenLine, tokenColumn, tokenOffset
             });
 
@@ -529,6 +527,7 @@ if (current == ';') {
                         TokenType::ARROW, "->",
                         tokenLine, tokenColumn, tokenOffset
                     });
+                    
                 } else {
                     tokens.push_back({
                         TokenType::MINUS, "-",

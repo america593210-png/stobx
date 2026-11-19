@@ -180,6 +180,21 @@ llvm::Value* CodeGen::generateExpression(ASTNode* node) {
             return builder->CreateNot(operand, "nottmp");
         }
 
+if (unaryNode->op == "-") {
+    if (operand->getType()->isIntegerTy()) {
+        return builder->CreateNeg(operand, "negtmp");
+    }
+
+    if (operand->getType()->isFloatingPointTy()) {
+        return builder->CreateFNeg(operand, "fnegtmp");
+    }
+
+    throw std::runtime_error(
+        "Unary minus requires a numeric expression"
+    );
+}
+
+
         throw std::runtime_error(
             "Unknown unary operator: " + unaryNode->op
         );
@@ -421,7 +436,7 @@ for (const auto& statement : program->statements) {
     }
 }
 
-// Pre-declare all functions before generating their bodies.
+
 for (const auto& statement : program->statements) {
     auto* functionNode =
         dynamic_cast<FunctionASTNode*>(statement.get());
