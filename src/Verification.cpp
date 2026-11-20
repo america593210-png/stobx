@@ -223,15 +223,61 @@ if (auto* number = dynamic_cast<const NumberASTNode*>(
 
     return std::nullopt;
 }
-
-
 VerificationResult Verification::verify(
     const VerificationASTNode* block
 ) {
-    if (!block) {
+    if (!block || block->statements.empty()) {
         return VerificationResult::Failed;
     }
 
-    return VerificationResult::Success;
-}
+    solver.reset();
+    variables.clear();
+    symbolCounter = 0;
 
+    for (const auto& statement : block->statements) {
+        auto* declaration =
+            dynamic_cast<const VariableDeclarationASTNode*>(
+                statement.get()
+            );
+
+        if (!declaration) {
+            return VerificationResult::Unknown;
+        }
+
+        auto expression = createExpression(
+            declaration->value.get(),
+            declaration->type
+        );
+
+        if (!expression) {
+            return VerificationResult::Failed;
+        }
+
+        if (!createSymbolicVariable(
+            declaration->name,
+            declaration->type
+        )) {
+            return VerificationResult::Failed;
+        }
+
+        auto variable = variables.find(declaration->name);
+
+        if (variable == variables.end()) {
+            return VerificationResult::Failed;
+        }
+
+        solver.add(variable->second.value == *expression);
+    }
+
+    z3::check_result result = solver.check();
+
+    if (result == z3::sat) {
+        return VerificationResult::Success;
+    }
+
+    if (result == z3::unsat) {
+        return VerificationResult::Failed;
+    }
+
+    return VerificationResult::Unknown;
+}

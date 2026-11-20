@@ -103,7 +103,7 @@ public:
     )
         : name(std::move(name)),
           value(std::move(value)) {}
-};
+}; 
 
 class ProgramASTNode : public ASTNode {
 public:

@@ -523,10 +523,10 @@ std::unique_ptr<ASTNode> Parser::parseFor() {
 
     consumeOpeningParenthesis();
 
-    // Initialization
+    
     auto initialization = parseVariableDeclaration();
 
-    // Condition
+    
     auto condition = parseOr();
 
     consume(
@@ -534,7 +534,7 @@ std::unique_ptr<ASTNode> Parser::parseFor() {
         "Expected ';' after for condition"
     );
 
-    // Update
+    
     Token nameToken = consume(
         TokenType::IDENTIFIER,
         "Expected variable name in for update"
