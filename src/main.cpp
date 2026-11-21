@@ -1,9 +1,10 @@
-
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <cstdlib>
 #include <cstdio>
+#include <cstddef>
+#include <string>
 
 #include "SP.h"
 #include "Lexer.h"
@@ -18,53 +19,66 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-const char* skipFile = ".stobx_skip_correction";
-bool skipCorrectionPrompt = false;
+    const std::string filename = argv[1];
+    const char* skipFile = ".stobx_skip_correction";
+    bool skipCorrectionPrompt = false;
 
-std::ifstream skipFlag(skipFile);
-
-if (skipFlag.good()) {
-    skipCorrectionPrompt = true;
-    skipFlag.close();
-    std::remove(skipFile);
-}
-
-    SP processor;
-
-    if (!processor.process(argv[1])) {
-        if (!processor.process(argv[1])) {
-            return 1;
+    {
+        std::ifstream skipFlag(skipFile);
+        if (skipFlag.good()) {
+            skipCorrectionPrompt = true;
+            skipFlag.close();
+            std::remove(skipFile);
         }
-
-        return 0;
     }
 
-    std::ifstream file(argv[1]);
-
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << argv[1] << "\n";
+    SP processor;
+    if (!processor.process(filename)) {
+        std::cerr << "Error: Preprocessor failed on file " << filename << "\n";
         return 1;
     }
 
-    std::stringstream buffer;
-    buffer << file.rdbuf();
+    std::string sourceCode;
+    {
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            std::cerr << "Error: Could not open file " << filename << "\n";
+            return 1;
+        }
 
-    std::string sourceCode = buffer.str();
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        sourceCode = buffer.str();
+    } // file is safely closed here before any potential overwrite
 
     try {
         Lexer lexer(sourceCode);
         auto tokens = lexer.tokenize();
 
+        // Catch invalid/unrecognized tokens early before parsing
+        bool hasLexError = false;
+        for (const auto& token : tokens) {
+            if (token.type == TokenType::UNKNOWN) {
+                std::cerr << "Lexer Error: Line " << token.line
+                          << ", Column " << token.column
+                          << ": Unexpected token '" << token.value << "'\n";
+                hasLexError = true;
+            }
+        }
+        if (hasLexError) {
+            return 1;
+        }
+
         Parser parser(tokens);
         auto ast = parser.parse();
 
-        if (!parser.getDiagnostics().empty() && !skipCorrectionPrompt){
+        if (!parser.getDiagnostics().empty() && !skipCorrectionPrompt) {
             DiagnosticUI ui;
-            
             CorrectionEngine correctionEngine;
 
             std::string currentSourceCode = sourceCode;
-            std::size_t offsetAdjustment = 0;
+            std::ptrdiff_t offsetAdjustment = 0;
+            bool fileModified = false;
 
             for (const auto& diagnostic : parser.getDiagnostics()) {
                 ui.showDiagnostic(diagnostic);
@@ -75,7 +89,9 @@ if (skipFlag.good()) {
                 ui.showCorrection(correction);
 
                 Diagnostic adjustedDiagnostic = diagnostic;
-                adjustedDiagnostic.offset += offsetAdjustment;
+                adjustedDiagnostic.offset = static_cast<std::size_t>(
+                    static_cast<std::ptrdiff_t>(diagnostic.offset) + offsetAdjustment
+                );
 
                 std::string preview =
                     correctionEngine.createPreview(
@@ -90,7 +106,7 @@ if (skipFlag.good()) {
 
                 if (ui.askForCorrection()) {
                     std::ofstream outputFile(
-                        argv[1],
+                        filename,
                         std::ios::out | std::ios::trunc
                     );
 
@@ -103,37 +119,36 @@ if (skipFlag.good()) {
                     outputFile.close();
 
                     offsetAdjustment +=
-                        preview.size() - currentSourceCode.size();
+                        static_cast<std::ptrdiff_t>(preview.size()) -
+                        static_cast<std::ptrdiff_t>(currentSourceCode.size());
 
                     currentSourceCode = preview;
+                    fileModified = true;
+                } else {
+                    std::cout << "\nCorrection cancelled.\n";
 
-               } else {
-    std::cout << "\nCorrection cancelled.\n";
+                    std::ofstream outSkipFlag(skipFile);
+                    if (!outSkipFlag.is_open()) {
+                        std::cerr << "Error: Could not save temporary state.\n";
+                        return 1;
+                    }
+                    outSkipFlag.close();
 
-    std::ofstream skipFlag(skipFile);
-
-    if (!skipFlag.is_open()) {
-        std::cerr << "Error: Could not save temporary state.\n";
-        return 1;
-    }
-
-    skipFlag.close();
-
-    return 1;
-}
-
+                    return 1;
+                }
             }
 
-                        return 1;
+            if (fileModified) {
+                std::cout << "\nFile updated with corrections. Please re-run ./stobx "
+                          << filename << "\n";
+            }
+            return 1;
         }
 
         if (!parser.getErrors().empty()) {
-
-
             for (const auto& error : parser.getErrors()) {
                 std::cerr << error << "\n";
             }
-
             return 1;
         }
 
@@ -141,8 +156,9 @@ if (skipFlag.good()) {
         codegen.generate(ast.get());
         codegen.printIR();
 
+        // -lm ensures external math functions (extern) link cleanly
         int compileResult = std::system(
-            "clang output.ll -o stobx_program"
+            "clang output.ll -lm -o stobx_program"
         );
 
         if (compileResult != 0) {
@@ -155,7 +171,8 @@ if (skipFlag.good()) {
         );
 
         if (runResult != 0) {
-            std::cerr << "Error: Failed to run STOBX program\n";
+            std::cerr << "Error: Program exited with non-zero status ("
+                      << runResult << ")\n";
             return 1;
         }
 
@@ -166,4 +183,3 @@ if (skipFlag.good()) {
 
     return 0;
 }
-

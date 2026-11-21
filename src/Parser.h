@@ -1,4 +1,3 @@
-
 #ifndef PARSER_H
 #define PARSER_H
 
@@ -24,12 +23,36 @@ public:
         : value(std::move(value)) {}
 };
 
+class FloatASTNode : public ASTNode {
+public:
+    std::string value;
+
+    explicit FloatASTNode(std::string value)
+        : value(std::move(value)) {}
+};
+
 class StringASTNode : public ASTNode {
 public:
     std::string value;
 
     explicit StringASTNode(std::string value)
         : value(std::move(value)) {}
+};
+
+class CharASTNode : public ASTNode {
+public:
+    std::string value;
+
+    explicit CharASTNode(std::string value)
+        : value(std::move(value)) {}
+};
+
+class BoolASTNode : public ASTNode {
+public:
+    bool value;
+
+    explicit BoolASTNode(bool value)
+        : value(value) {}
 };
 
 class VariableASTNode : public ASTNode {
@@ -51,6 +74,27 @@ public:
     )
         : name(std::move(name)),
           arguments(std::move(arguments)) {}
+};
+
+class NewASTNode : public ASTNode {
+public:
+    std::string typeName;
+    std::unique_ptr<ASTNode> sizeExpr; // optional array/count expr
+
+    NewASTNode(
+        std::string typeName,
+        std::unique_ptr<ASTNode> sizeExpr = nullptr
+    )
+        : typeName(std::move(typeName)),
+          sizeExpr(std::move(sizeExpr)) {}
+};
+
+class DeleteASTNode : public ASTNode {
+public:
+    std::unique_ptr<ASTNode> target;
+
+    explicit DeleteASTNode(std::unique_ptr<ASTNode> target)
+        : target(std::move(target)) {}
 };
 
 class UnaryASTNode : public ASTNode {
@@ -103,21 +147,11 @@ public:
     )
         : name(std::move(name)),
           value(std::move(value)) {}
-}; 
+};
 
 class ProgramASTNode : public ASTNode {
 public:
     std::vector<std::unique_ptr<ASTNode>> statements;
-};
-
-class VerificationASTNode : public ASTNode {
-public:
-    std::vector<std::unique_ptr<ASTNode>> statements;
-
-    explicit VerificationASTNode(
-        std::vector<std::unique_ptr<ASTNode>> statements
-    )
-        : statements(std::move(statements)) {}
 };
 
 class IfASTNode : public ASTNode {
@@ -192,6 +226,7 @@ class FunctionASTNode : public ASTNode {
 public:
     std::string name;
     std::string returnType;
+    bool isExtern;
 
     std::vector<std::unique_ptr<ParameterASTNode>> parameters;
     std::vector<std::unique_ptr<ASTNode>> statements;
@@ -200,10 +235,12 @@ public:
         std::string name,
         std::string returnType,
         std::vector<std::unique_ptr<ParameterASTNode>> parameters,
-        std::vector<std::unique_ptr<ASTNode>> statements
+        std::vector<std::unique_ptr<ASTNode>> statements,
+        bool isExtern = false
     )
         : name(std::move(name)),
           returnType(std::move(returnType)),
+          isExtern(isExtern),
           parameters(std::move(parameters)),
           statements(std::move(statements)) {}
 };
@@ -223,6 +260,7 @@ public:
           type(std::move(type)),
           value(std::move(value)) {}
 };
+
 class ReturnASTNode : public ASTNode {
 public:
     std::unique_ptr<ASTNode> value;
@@ -279,6 +317,7 @@ private:
     Token peek() const;
     Token advance();
     bool match(TokenType type);
+    bool isTypeToken(TokenType type) const;
 
     Token consume(
         TokenType type,
@@ -305,7 +344,6 @@ private:
     std::unique_ptr<ASTNode> parseOr();
     std::unique_ptr<ASTNode> parseAnd();
     std::unique_ptr<ASTNode> parseNot();
-    std::unique_ptr<ASTNode> parseUnary();
 
     std::unique_ptr<ASTNode> parseShift();
     std::unique_ptr<ASTNode> parseRelational();
@@ -320,7 +358,8 @@ private:
     std::unique_ptr<ASTNode> parseTerm();
 
     std::unique_ptr<ASTNode> parseStatement();
-    std::unique_ptr<ASTNode> parseFunction();
+    std::unique_ptr<ASTNode> parseFunction(bool isExtern = false);
+    std::unique_ptr<ASTNode> parseDelete();
     std::unique_ptr<ASTNode> parseVariableDeclaration();
     std::unique_ptr<ASTNode> parseReturn();
     std::unique_ptr<ASTNode> parseAssert();
@@ -329,10 +368,10 @@ private:
     std::unique_ptr<ASTNode> parseFor();
     std::unique_ptr<ASTNode> parseBreak();
     std::unique_ptr<ASTNode> parseContinue();
-    std::unique_ptr<ASTNode> parseVerificationBlock();
+    
 
 };
 
-#endif
 
+#endif
 

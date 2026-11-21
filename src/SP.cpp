@@ -131,10 +131,17 @@ bool SP::process(const std::string& filename) {
 
         input >> operation >> target;
 
-        if (target.size() != 3 ||
-            target[0] != '#' ||
-            !std::isdigit(static_cast<unsigned char>(target[1])) ||
-            target[2] != '#') {
+        bool isGroupTarget =
+            target.size() == 3 &&
+            target[0] == '#' &&
+            std::isdigit(static_cast<unsigned char>(target[1])) &&
+            target[2] == '#';
+
+        if (isDelete && !isGroupTarget) {
+            continue;
+        }
+
+        if (!isGroupTarget) {
             std::cerr << "Error: Invalid group command\n";
             return false;
         }
@@ -264,4 +271,3 @@ bool SP::process(const std::string& filename) {
 
     return true;
 }
-

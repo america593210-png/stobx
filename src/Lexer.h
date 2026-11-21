@@ -1,4 +1,3 @@
-
 #ifndef LEXER_H
 #define LEXER_H
 
@@ -17,6 +16,7 @@ enum class TokenType {
     WHILE,
     DO,
     LET,
+    PTR,
     RETURN,
     U1,
     U8,
@@ -35,8 +35,7 @@ enum class TokenType {
     FOR,
     BREAK,
     CONTINUE,
-    STRING,
-    STRING_LITERAL,
+    STRING, // the type name: string
     REQUIRES,
     ENSURES,
     INVARIANT,
@@ -44,11 +43,20 @@ enum class TokenType {
     ASSUME,
     RESULT,
     IDENTIFIER,
-    NUMBER,
+    NUMBER, // integer literal
+    FLOAT_LITERAL, // NEW: 3.14
+    STRING_LITERAL, // NEW: "hello"
+    CHAR_LITERAL, // NEW: 'a'
+    TRUE_KW, // NEW
+    FALSE_KW, // NEW
+    EXTERN, // NEW
+    NEW, // NEW
+    DELETE_KW, // NEW (DELETE clashes with a Windows macro)
     PLUS,
     MINUS,
     MULTIPLY,
     DIVIDE,
+    PERCENT, // NEW
     EQUAL,
     GREATER,
     LESS,
@@ -56,9 +64,11 @@ enum class TokenType {
     LESS_EQUAL,
     EQUAL_EQUAL,
     NOT_EQUAL,
+    BANG, // NEW: single !
     ARROW,
     COLON,
     COMMA,
+    DOT, // NEW
     AMPERSAND,
     PIPE,
     CARET,
@@ -68,8 +78,10 @@ enum class TokenType {
     RPAREN,
     LBRACE,
     RBRACE,
-    VERIFY_START,
-    VERIFY_END,
+    LBRACKET, // NEW
+    RBRACKET, // NEW
+    VERIFY_START, // now "#["
+    VERIFY_END, // now "]#"
     SEMICOLON,
     END_OF_FILE,
     UNKNOWN,
@@ -95,10 +107,10 @@ private:
     int currentColumn = 1;
 
     char peek() const;
+    char peekNext() const; // NEW
     char advance();
-    void skipWhitespace();
+    void skipWhitespace(); // now also skips // and /* */ comments
+    char readEscape(); // NEW: after a backslash
 };
 
 #endif
-
-

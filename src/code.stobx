@@ -1,1 +1,5 @@
-pri(- -6) ;
+let rf: ptr = fopen("test.txt", "r");
+let buf: ptr = malloc(32);
+let read_count: i64 = fread(buf, 1, 11, rf);
+let rclosed: i32 = fclose(rf);
+

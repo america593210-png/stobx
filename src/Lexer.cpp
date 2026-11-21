@@ -1,7 +1,61 @@
-
 #include "Lexer.h"
 #include <cctype>
+#include <unordered_map>
 #include <utility>
+
+// NEW: keyword table replaces the long else-if chain.
+// (else / else if are handled separately below.)
+static const std::unordered_map<std::string, TokenType> keywords = {
+    {"pri", TokenType::PRI},
+    {"if", TokenType::IF},
+    {"and", TokenType::AND},
+    {"or", TokenType::OR},
+    {"not", TokenType::NOT},
+    {"while", TokenType::WHILE},
+    {"do", TokenType::DO},
+    {"let", TokenType::LET},
+    {"ptr", TokenType::PTR},
+    
+    {"return", TokenType::RETURN},
+    {"u1", TokenType::U1},
+    {"u8", TokenType::U8},
+    {"u16", TokenType::U16},
+    {"u32", TokenType::U32},
+    {"u64", TokenType::U64},
+    {"i1", TokenType::I1},
+    {"i8", TokenType::I8},
+    {"i16", TokenType::I16},
+    {"i32", TokenType::I32},
+    {"i64", TokenType::I64},
+    {"f32", TokenType::F32},
+    {"f64", TokenType::F64},
+    {"bool", TokenType::BOOL},
+    {"char", TokenType::CHAR},
+    {"string", TokenType::STRING},
+    {"requires", TokenType::REQUIRES},
+    {"ensures", TokenType::ENSURES},
+    {"invariant", TokenType::INVARIANT},
+    {"assert", TokenType::ASSERT},
+    {"assume", TokenType::ASSUME},
+    {"for", TokenType::FOR},
+    {"break", TokenType::BREAK},
+    {"continue", TokenType::CONTINUE},
+    {"result", TokenType::RESULT},
+    // NEW
+    {"extern", TokenType::EXTERN},
+    {"new", TokenType::NEW},
+    {"delete", TokenType::DELETE_KW},
+    {"true", TokenType::TRUE_KW},
+    {"false", TokenType::FALSE_KW},
+};
+
+static bool isIdentStart(char c) {
+    return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
+}
+
+static bool isIdentChar(char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+}
 
 Lexer::Lexer(std::string source)
     : source(std::move(source)) {}
@@ -11,6 +65,14 @@ char Lexer::peek() const {
         return '\0';
 
     return source[cursor];
+}
+
+// NEW
+char Lexer::peekNext() const {
+    if (cursor + 1 >= source.length())
+        return '\0';
+
+    return source[cursor + 1];
 }
 
 char Lexer::advance() {
@@ -29,10 +91,51 @@ char Lexer::advance() {
     return c;
 }
 
+// CHANGED: also skips comments
 void Lexer::skipWhitespace() {
-    while (std::isspace(
-        static_cast<unsigned char>(peek()))) {
-        advance();
+    while (true) {
+        char c = peek();
+
+        if (std::isspace(static_cast<unsigned char>(c))) {
+            advance();
+
+        } else if (c == '/' && peekNext() == '/') {
+            while (peek() != '\n' && peek() != '\0')
+                advance();
+
+        } else if (c == '/' && peekNext() == '*') {
+            advance();
+            advance();
+
+            while (peek() != '\0' &&
+                   !(peek() == '*' && peekNext() == '/')) {
+                advance();
+            }
+
+            if (peek() != '\0') {
+                advance();
+                advance();
+            }
+
+        } else {
+            break;
+        }
+    }
+}
+
+// NEW: called right after a backslash was consumed
+char Lexer::readEscape() {
+    char e = advance();
+
+    switch (e) {
+        case 'n': return '\n';
+        case 't': return '\t';
+        case 'r': return '\r';
+        case '0': return '\0';
+        case '\\': return '\\';
+        case '"': return '"';
+        case '\'': return '\'';
+        default: return e;
     }
 }
 
@@ -51,36 +154,114 @@ std::vector<Token> Lexer::tokenize() {
         int tokenColumn = currentColumn;
         std::size_t tokenOffset = cursor;
 
-if (current == ';') {
-    advance();
-
-    tokens.push_back({
-        TokenType::SEMICOLON, ";",
-        tokenLine, tokenColumn, tokenOffset
-    });
-
-    continue;
-}
-
-        if (current == '"') {
+        if (current == ';') {
             advance();
 
-            std::string strVal;
-
-            while (peek() != '"' && peek() != '\0')
-                strVal += advance();
-
-            if (peek() == '"')
-                advance();
-
             tokens.push_back({
-                TokenType::STRING_LITERAL, strVal,
+                TokenType::SEMICOLON, ";",
                 tokenLine, tokenColumn, tokenOffset
             });
 
             continue;
         }
 
+        // CHANGED: STRING_LITERAL + escapes + unterminated detection
+        if (current == '"') {
+            advance();
+
+            std::string strVal;
+
+            while (peek() != '"' && peek() != '\0') {
+                char ch = advance();
+
+                if (ch == '\\')
+                    strVal += readEscape();
+                else
+                    strVal += ch;
+            }
+
+            if (peek() == '"') {
+                advance();
+
+                tokens.push_back({
+                    TokenType::STRING_LITERAL, strVal,
+                    tokenLine, tokenColumn, tokenOffset
+                });
+            } else {
+                tokens.push_back({
+                    TokenType::UNKNOWN, "unterminated string",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+            }
+
+            continue;
+        }
+
+        // FIXED: char literal 'a' / '\n' + reject empty '' and multi-char 'ab'
+        if (current == '\'') {
+            advance(); // consume opening '\''
+
+            if (peek() == '\'') {
+                advance(); // consume closing '\''
+                tokens.push_back({
+                    TokenType::UNKNOWN, "empty char literal",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                continue;
+            }
+
+            if (peek() == '\0') {
+                tokens.push_back({
+                    TokenType::UNKNOWN, "unterminated char literal",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                continue;
+            }
+
+            std::string val;
+            if (peek() == '\\') {
+                advance(); // consume '\\'
+                if (peek() == '\0') {
+                    tokens.push_back({
+                        TokenType::UNKNOWN, "unterminated char literal",
+                        tokenLine, tokenColumn, tokenOffset
+                    });
+                    continue;
+                }
+                val += readEscape();
+            } else {
+                val += advance();
+            }
+
+            if (peek() == '\'') {
+                advance(); // consume closing '\''
+                tokens.push_back({
+                    TokenType::CHAR_LITERAL, val,
+                    tokenLine, tokenColumn, tokenOffset
+                });
+            } else if (peek() == '\0') {
+                tokens.push_back({
+                    TokenType::UNKNOWN, "unterminated char literal",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+            } else {
+                // Consume extra characters up to closing '\'' or EOF so recovery doesn't cascade
+                while (peek() != '\'' && peek() != '\0') {
+                    advance();
+                }
+                if (peek() == '\'') {
+                    advance();
+                }
+                tokens.push_back({
+                    TokenType::UNKNOWN, "multi-character char literal",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+            }
+
+            continue;
+        }
+
+        // CHANGED: float support (3.14)
         if (std::isdigit(
             static_cast<unsigned char>(current))) {
 
@@ -91,240 +272,52 @@ if (current == ';') {
                 numVal += advance();
             }
 
+            bool isFloat = false;
+
+            if (peek() == '.' &&
+                std::isdigit(
+                    static_cast<unsigned char>(peekNext()))) {
+
+                isFloat = true;
+                numVal += advance(); // '.'
+
+                while (std::isdigit(
+                    static_cast<unsigned char>(peek()))) {
+                    numVal += advance();
+                }
+            }
+
             tokens.push_back({
-                TokenType::NUMBER, numVal,
+                isFloat ? TokenType::FLOAT_LITERAL
+                        : TokenType::NUMBER,
+                numVal,
                 tokenLine, tokenColumn, tokenOffset
             });
 
             continue;
         }
 
-        if (std::isalpha(
-            static_cast<unsigned char>(current))) {
+        // CHANGED: '_' allowed + keyword table
+        if (isIdentStart(current)) {
 
             std::string ident;
 
-            while (std::isalnum(
-                static_cast<unsigned char>(peek()))) {
+            while (isIdentChar(peek())) {
                 ident += advance();
             }
 
-            if (ident == "pri") {
-                tokens.push_back({
-                    TokenType::PRI, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });
-
-            } else if (ident == "if") {
-                tokens.push_back({
-                    TokenType::IF, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });
-
-            } else if (ident == "and") {
-                tokens.push_back({
-                    TokenType::AND, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });
-
-            } else if (ident == "or") {
-                tokens.push_back({
-                    TokenType::OR, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });
-
-            } else if (ident == "not") {
-                tokens.push_back({
-                    TokenType::NOT, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });
-
-            } else if (ident == "while") {
-                tokens.push_back({
-                    TokenType::WHILE, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });
-
-                 } else if (ident == "do") {
-                tokens.push_back({
-                    TokenType::DO, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });
-
-            } else if (ident == "let") {
-                tokens.push_back({
-                    TokenType::LET, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "return") {
-                tokens.push_back({
-                    TokenType::RETURN, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "u1") {
-                tokens.push_back({
-                    TokenType::U1, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "u8") {
-                tokens.push_back({
-                    TokenType::U8, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "u16") {
-                tokens.push_back({
-                    TokenType::U16, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "u32") {
-                tokens.push_back({
-                    TokenType::U32, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "u64") {
-                tokens.push_back({
-                    TokenType::U64, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "i1") {
-                tokens.push_back({
-                    TokenType::I1, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "i8") {
-                tokens.push_back({
-                    TokenType::I8, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "i16") {
-                tokens.push_back({
-                    TokenType::I16, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "i32") {
-                tokens.push_back({
-                    TokenType::I32, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "i64") {
-                tokens.push_back({
-                    TokenType::I64, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "f32") {
-                tokens.push_back({
-                    TokenType::F32, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "f64") {
-                tokens.push_back({
-                    TokenType::F64, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "bool") {
-                tokens.push_back({
-                    TokenType::BOOL, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "char") {
-                tokens.push_back({
-                    TokenType::CHAR, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "string") {
-                tokens.push_back({
-                    TokenType::STRING, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-  } else if (ident == "requires") {
-                tokens.push_back({
-                    TokenType::REQUIRES, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-} else if (ident == "ensures") {
-                tokens.push_back({
-                    TokenType::ENSURES, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-} else if (ident == "invariant") {
-                tokens.push_back({
-                    TokenType::INVARIANT, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-} else if (ident == "assert") {
-                tokens.push_back({
-                    TokenType::ASSERT, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-} else if (ident == "assume") {
-                tokens.push_back({
-                    TokenType::ASSUME, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });    
-
-} else if (ident == "for") {
-                tokens.push_back({
-                    TokenType::FOR, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });    
-
-
-} else if (ident == "break") {
-                tokens.push_back({
-                    TokenType::BREAK, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });  
-
-
-} else if (ident == "continue") {
-                tokens.push_back({
-                    TokenType::CONTINUE, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });  
-
-} else if (ident == "result") {
-                tokens.push_back({
-                    TokenType::RESULT, ident,
-                    tokenLine, tokenColumn, tokenOffset
-                });     
-
-            } else if (ident == "else") {
+            if (ident == "else") {
                 std::size_t savedCursor = cursor;
                 int savedLine = currentLine;
                 int savedColumn = currentColumn;
 
-                while (std::isspace(
-                    static_cast<unsigned char>(peek()))) {
-                    advance();
-                }
+                skipWhitespace();
 
                 bool isIf =
                     peek() == 'i' &&
-                    cursor + 1 < source.length() &&
-                    source[cursor + 1] == 'f' &&
+                    peekNext() == 'f' &&
                     (cursor + 2 >= source.length() ||
-                     !std::isalnum(
-                         static_cast<unsigned char>(
-                             source[cursor + 2]
-                         )
-                     ));
+                     !isIdentChar(source[cursor + 2]));
 
                 if (isIf) {
                     advance();
@@ -348,8 +341,12 @@ if (current == ';') {
                 }
 
             } else {
+                auto it = keywords.find(ident);
+
                 tokens.push_back({
-                    TokenType::IDENTIFIER, ident,
+                    it != keywords.end() ? it->second
+                                         : TokenType::IDENTIFIER,
+                    ident,
                     tokenLine, tokenColumn, tokenOffset
                 });
             }
@@ -357,10 +354,32 @@ if (current == ';') {
             continue;
         }
 
-        if (current == '=' &&
-            cursor + 1 < source.length() &&
-            source[cursor + 1] == '=') {
+        // NEW: verify markers moved to #[ and ]#
+        if (current == '#' && peekNext() == '[') {
+            advance();
+            advance();
 
+            tokens.push_back({
+                TokenType::VERIFY_START, "#[",
+                tokenLine, tokenColumn, tokenOffset
+            });
+
+            continue;
+        }
+
+        if (current == ']' && peekNext() == '#') {
+            advance();
+            advance();
+
+            tokens.push_back({
+                TokenType::VERIFY_END, "]#",
+                tokenLine, tokenColumn, tokenOffset
+            });
+
+            continue;
+        }
+
+        if (current == '=' && peekNext() == '=') {
             advance();
             advance();
 
@@ -372,10 +391,7 @@ if (current == ';') {
             continue;
         }
 
-        if (current == '!' &&
-            cursor + 1 < source.length() &&
-            source[cursor + 1] == '=') {
-
+        if (current == '!' && peekNext() == '=') {
             advance();
             advance();
 
@@ -387,10 +403,7 @@ if (current == ';') {
             continue;
         }
 
-        if (current == '>' &&
-            cursor + 1 < source.length() &&
-            source[cursor + 1] == '=') {
-
+        if (current == '>' && peekNext() == '=') {
             advance();
             advance();
 
@@ -402,10 +415,7 @@ if (current == ';') {
             continue;
         }
 
-        if (current == '<' &&
-            cursor + 1 < source.length() &&
-            source[cursor + 1] == '=') {
-
+        if (current == '<' && peekNext() == '=') {
             advance();
             advance();
 
@@ -423,6 +433,14 @@ if (current == ';') {
             case '=':
                 tokens.push_back({
                     TokenType::EQUAL, "=",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                break;
+
+            // NEW
+            case '!':
+                tokens.push_back({
+                    TokenType::BANG, "!",
                     tokenLine, tokenColumn, tokenOffset
                 });
                 break;
@@ -456,7 +474,7 @@ if (current == ';') {
                     });
                 }
                 break;
-            
+
             case '(':
                 tokens.push_back({
                     TokenType::LPAREN, "(",
@@ -470,12 +488,14 @@ if (current == ';') {
                     tokenLine, tokenColumn, tokenOffset
                 });
                 break;
+
             case ',':
                 tokens.push_back({
                     TokenType::COMMA, ",",
                     tokenLine, tokenColumn, tokenOffset
                 });
                 break;
+
             case ':':
                 tokens.push_back({
                     TokenType::COLON, ":",
@@ -483,36 +503,43 @@ if (current == ';') {
                 });
                 break;
 
+            // NEW
+            case '.':
+                tokens.push_back({
+                    TokenType::DOT, ".",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                break;
 
-           case '{':
-    if (peek() == '{') {
-        advance();
-        tokens.push_back({
-            TokenType::VERIFY_START, "{{",
-            tokenLine, tokenColumn, tokenOffset
-        });
-    } else {
-        tokens.push_back({
-            TokenType::LBRACE, "{",
-            tokenLine, tokenColumn, tokenOffset
-        });
-    }
-    break;
+            // CHANGED: no more {{ -> plain braces only
+            case '{':
+                tokens.push_back({
+                    TokenType::LBRACE, "{",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                break;
 
-          case '}':
-    if (peek() == '}') {
-        advance();
-        tokens.push_back({
-            TokenType::VERIFY_END, "}}",
-            tokenLine, tokenColumn, tokenOffset
-        });
-    } else {
-        tokens.push_back({
-            TokenType::RBRACE, "}",
-            tokenLine, tokenColumn, tokenOffset
-        });
-    }
-    break;
+            case '}':
+                tokens.push_back({
+                    TokenType::RBRACE, "}",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                break;
+
+            // NEW
+            case '[':
+                tokens.push_back({
+                    TokenType::LBRACKET, "[",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                break;
+
+            case ']':
+                tokens.push_back({
+                    TokenType::RBRACKET, "]",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                break;
 
             case '+':
                 tokens.push_back({
@@ -520,6 +547,7 @@ if (current == ';') {
                     tokenLine, tokenColumn, tokenOffset
                 });
                 break;
+
             case '-':
                 if (peek() == '>') {
                     advance();
@@ -527,7 +555,6 @@ if (current == ';') {
                         TokenType::ARROW, "->",
                         tokenLine, tokenColumn, tokenOffset
                     });
-                    
                 } else {
                     tokens.push_back({
                         TokenType::MINUS, "-",
@@ -549,6 +576,15 @@ if (current == ';') {
                     tokenLine, tokenColumn, tokenOffset
                 });
                 break;
+
+            // NEW
+            case '%':
+                tokens.push_back({
+                    TokenType::PERCENT, "%",
+                    tokenLine, tokenColumn, tokenOffset
+                });
+                break;
+
             case '&':
                 tokens.push_back({
                     TokenType::AMPERSAND, "&",
@@ -590,5 +626,3 @@ if (current == ';') {
 
     return tokens;
 }
-
-
